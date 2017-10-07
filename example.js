@@ -2,8 +2,18 @@ var FSDocs = require('./fsdocs').FSDocs;
 var docs = new FSDocs(__dirname+'/mydocs');
 
 // synchronous API
-console.log(docs.putSync('doc1', {title:'internet', age:35.5}))
-console.log(docs.getSync('doc1'))
+
+// no _version defaults to 1 which already exists
+const init = {title:'internet', age:35.5};
+console.log(docs.putSync('doc1', init));
+
+const data = docs.getSync('doc1');
+console.log(data);
+
+console.log(docs.putSync('doc1', data));
+console.log(docs.getSync('doc1'));
+
+console.log('-------------------');
 
 // asynchronous API
 docs.put('doc2', {title:"Hello"}, function(err, ok) {

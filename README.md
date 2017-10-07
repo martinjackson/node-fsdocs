@@ -1,7 +1,20 @@
 # fsdocs
 
-Simple, [ACID](http://en.wikipedia.org/wiki/ACID) and versioned
-file system-based document database for [node.js](http://nodejs.org/).
+## Important !!!
+> this was cloned from https://github.com/rsms/node-fsdocs.git
+This my reference until I get get more information and contribute back to the original project.
+
+### Why I cloned rsms' project
+> I had a problem on my MacOS Sierra 10.12.6 (16G29)  Node 8.5.0
+   errno for file exists was -17 not 17
+   http://www.virtsync.com/c-error-codes-include-errno stated OS errno are positive,
+   why in this example they are negative?
+   -- needs more testing on differe OSes and diff version of NodeJS
+   Martin Jackson 2017-10-07
+
+### Back to his documentation ...
+
+Simple, [ACID](http://en.wikipedia.org/wiki/ACID) and versioned file system-based document database for [node.js](http://nodejs.org/).
 
 The idea is that you can use this simple, single-file module for quick hacks
 where installing (and possibly deploying) a full-scale "real" database like CouchDB, MySQL, Redis, MongoDB, etc kills your creativity. Since documents and their different versions are stored as regular JSON files, inspecting and manipulating data while developing is really easy and simple (just remove/edit/add files).

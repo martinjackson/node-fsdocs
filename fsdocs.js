@@ -2,17 +2,17 @@
  * Simple but ACID file system-based document database.
  *
  * Copyright (c) 2011 Rasmus Andersson <http://rsms.me/>
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
+ *
  * The above copyright notice and this permission notice shall be included in
  * all copies or substantial portions of the Software.
- * 
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -21,15 +21,37 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
  */
+
+ /**
+ Martin Jackson 2017-10-07
+    on my MacOS Sierra 10.12.6 (16G29)  Node 8.5.0
+    errno for file exists was -17 not 17
+    http://www.virtsync.com/c-error-codes-include-errno stated OS errno are positive,
+    why in this example they are negative?
+    -- needs more testing on differe OSes and diff version of NodeJS
+ */
+
 var fs = require('fs');
 
+const EEXIST = -17;    /* File exists */
+const ENOENT = 2;      /* No such file or directory */
+const EBADF  = 9;      /* Bad file number */
+
+
+
 function FSDocs(location) {
+
   this.location = require('path').normalize(location);
   this.prefixLength = 0;
   // FIXME: move into an open method or something like that
   try {
     fs.mkdirSync(this.location, 0700);
-  } catch (e) { if (typeof e !== 'object' || e.errno !== 17) throw e; }
+  } catch (e) {
+    if (typeof e !== 'object' || e.errno !== EEXIST) {
+      console.log('mkdir: ', e);
+      throw e;
+    }
+  }
 }
 
 FSDocs.prototype = {
@@ -43,17 +65,22 @@ FSDocs.prototype = {
     }
     return basename;
   },
-  
+
   mkdirsSync: function(dirname, mode) {
     var p = 0;
     dirname = dirname.substr(this.location.length+1) + '/';
     while ((p = dirname.indexOf('/', ++p)) !== -1) {
       try {
         fs.mkdirSync(this.location+'/'+dirname.substr(0, p), mode);
-      } catch (e) { if (typeof e !== 'object' || e.errno !== 17) throw e; }
+      } catch (e) {
+        if (typeof e !== 'object' || e.errno !== EEXIST) {
+          console.log('mkdirSync: ', e);
+          throw e;
+        }
+      }
     }
   },
-  
+
   mkdirs: function(dirname, mode, callback) {
     var p = 0, location = this.location;
     dirname = dirname.substr(location.length+1) + '/';
@@ -61,7 +88,7 @@ FSDocs.prototype = {
       p = dirname.indexOf('/', ++p);
       if (p === -1) return callback();
       fs.mkdir(location+'/'+dirname.substr(0, p), mode, function (err) {
-        if (err && (typeof err !== 'object' || err.errno !== 17)) {
+        if (err && (typeof err !== 'object' || err.errno !== EEXIST)) {
           callback(err);
         } else {
           next();
@@ -70,14 +97,15 @@ FSDocs.prototype = {
     }
     next();
   },
-  
+
   get: function(key, version, callback) {
     if (typeof version === 'function') { callback = version; version = 0; }
     var filename = this.entryPath(key)+'/'+
                    ((version && version > 0) ? version : 'current')+'.json';
     fs.readFile(filename, 'utf8', function(err, data) {
       if (err) {
-        if (typeof err === 'object' && (err.errno === 9 || err.errno === 2))
+        console.log('fsdocs: get: errno:', err.errno);
+        if (typeof err === 'object' && (err.errno === EBADF || err.errno === ENOENT))
           err = null;
         return callback && callback(err, null);
       }
@@ -92,20 +120,21 @@ FSDocs.prototype = {
     try {
       return JSON.parse(fs.readFileSync(filename));
     } catch (e) {
-      if (typeof e === 'object' && (e.errno === 9 || e.errno === 2))
+      console.log('fsdocs: getSync: errno:', e.errno);
+      if (typeof e === 'object' && (e.errno === EBADF || e.errno === ENOENT))
         return null;
       throw e;
     }
   },
-  
+
   putSync: function(key, document) {
     return this._put(key, document);
   },
-  
+
   put: function(key, document, callback) {
     return this._put(key, document, callback || function(){});
   },
-  
+
   _put: function(key, document, callback) {
     if (typeof document !== 'object')
       throw new TypeError('document must be an object');
@@ -128,16 +157,16 @@ FSDocs.prototype = {
 
           // lock the entry
           fs.link(tempname, lockfile, function(e) {
-            if (e && typeof e === 'object' && e.errno === 17) {
+            if (e && typeof e === 'object' && e.errno === EEXIST) {
               // someone else already has the lock (we where too slow)
               return fs.unlink(tempname, callback);
             } else if (e) { return callback(e); }
-          
+
             // link version
             fs.link(tempname, versionname, function(e) {
-              
+
               if (e) {
-                if (typeof e === 'object' && e.errno === 17) {
+                if (typeof e === 'object' && e.errno === EEXIST) {
                   // someone else wrote this version before we did
                   fs.unlink(tempname, function(e) {
                     fs.unlink(lockfile, function(){ callback(e) });
@@ -147,14 +176,14 @@ FSDocs.prototype = {
                 }
                 return;
               }
-              
+
               // update current by renaming temporary hardlink
               fs.rename(tempname, dstname, function(e1) {
                 fs.unlink(lockfile, function(e2) {
                   callback(e1 || e2, true);
                 });
               });
-              
+
             });
             // END link version
           });
@@ -162,7 +191,7 @@ FSDocs.prototype = {
         });
         // END write new data
       }
-      
+
       // make directories if we are writing the first version
       if (document._version === 1) {
         this.mkdirs(basename, 0700, function(err) {
@@ -192,7 +221,7 @@ FSDocs.prototype = {
           return true;
         } catch (e) {
           // someone else wrote this version before we did
-          if (typeof e === 'object' && e.errno === 17) {
+          if (typeof e === 'object' && e.errno === EEXIST) {
             fs.unlinkSync(tempname);
             return false;
           }
@@ -203,7 +232,7 @@ FSDocs.prototype = {
       } catch (e) {
         fs.unlinkSync(tempname);
         // someone else already has the lock (we where too slow)
-        if (typeof e === 'object' && e.errno === 17)
+        if (typeof e === 'object' && e.errno === EEXIST)
           return false;
         throw e;
       }
